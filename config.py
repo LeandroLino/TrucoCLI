@@ -25,10 +25,10 @@ VALOR_MAXIMO = 12
 # ===== POSIÇÕES =====
 POSICOES = ["Mão", "Contra-Pé", "Par Mão", "Pé"]
 POSICOES_EMOJI = {
-    "Mão": "👑",
-    "Contra-Pé": "⚔️",
-    "Par Mão": "🤝",
-    "Pé": "🎯"
+    "Mão": "",
+    "Contra-Pé": "",
+    "Par Mão": "",
+    "Pé": ""
 }
 
 # ===== TIMES =====

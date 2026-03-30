@@ -135,12 +135,10 @@ class TrucoClient:
         time_color = COR_TIME_A if self.meu_time == "A" else COR_TIME_B
         adversarios_time = "B" if self.meu_time == "A" else "A"
         
-        emoji_posicao = get_emoji_posicao(self.minha_posicao)
-        
         info_texto = (
             f"[{time_color}]{ICON_PONTOS} TIME {self.meu_time}[/]: "
             f"[bold]{self.nicks.get(self.meu_id, '???')}[/] "
-            f"{emoji_posicao} [{self.minha_posicao}] + {parceiro_nome} | "
+            f"[{self.minha_posicao}] + {parceiro_nome} | "
             f"[dim]Adversários: TIME {adversarios_time}[/]"
         )
         console.print(Panel(info_texto, border_style=time_color, expand=False))
