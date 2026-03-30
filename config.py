@@ -47,7 +47,7 @@ ANIMACAO_VENCEDOR_DELAY = 0.15
 BARRA_PROGRESSO_DELAY = 0.05
 
 # ===== DEBUG =====
-DEBUG_MODE = False  # Mude para True para ativar logs de debug
+DEBUG_MODE = True  # Mude para True para ativar logs de debug
 
 # ===== UI COLORS =====
 NAIPES_VERMELHOS = ["Ouros", "Copas"]

@@ -396,12 +396,22 @@ class TrucoClient:
         elif tipo == MsgType.RESULT:
             debug_log(f"RESULT recebido: {data['msg']}")
             
-            # Extrai informação do vencedor da queda
-            msg = data['msg']
-            if "Time A" in msg and "EMPATE" not in msg:
-                self.quedas_vencidas["A"] += 1
-            elif "Time B" in msg and "EMPATE" not in msg:
-                self.quedas_vencidas["B"] += 1
+            # Extrai informação do vencedor da queda de forma mais robusta
+            msg = data.get('msg', '')
+            try:
+                # Verifica se contém informação de time vencedor
+                if "Time A" in msg or "(A)" in msg:
+                    if "EMPATE" not in msg.upper():
+                        self.quedas_vencidas["A"] += 1
+                        debug_log("Time A ganhou esta queda")
+                elif "Time B" in msg or "(B)" in msg:
+                    if "EMPATE" not in msg.upper():
+                        self.quedas_vencidas["B"] += 1
+                        debug_log("Time B ganhou esta queda")
+                elif "EMPATE" in msg.upper():
+                    debug_log("Queda empatada - não contabiliza")
+            except Exception as e:
+                debug_log(f"Erro ao processar resultado da queda: {e}")
             
             self.mesa_jogadas.append({
                 "msg": f"[bold magenta]>> {msg}[/]",
