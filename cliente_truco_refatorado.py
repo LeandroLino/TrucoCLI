@@ -192,19 +192,13 @@ class TrucoClient:
             naipe_simbolo = NAIPE_SIMBOLOS.get(carta[1], carta[1][0])
             cor_naipe = "red" if e_carta_vermelha(carta[1]) else "white"
             
-            # Destaca se é manilha
-            if self.manilha and e_manilha(carta, self.manilha):
-                card_content = f"[bold yellow]{ICON_MANILHA}[/]\n[bold]{carta[0]}[/]\n[{cor_naipe}]{naipe_simbolo}[/]"
-                border_style = "yellow"
-            else:
-                card_content = f"[bold]{carta[0]}[/]\n[{cor_naipe}]{naipe_simbolo}[/]"
-                border_style = "cyan"
+            card_content = f"[bold]{carta[0]}[/]\n[{cor_naipe}]{naipe_simbolo}[/]"
             
             cols.append(Panel(
                 card_content,
                 title=f"[{i}]",
                 expand=False,
-                border_style=border_style
+                border_style="cyan"
             ))
         console.print(Panel(Columns(cols), title=title, border_style="cyan"))
     
