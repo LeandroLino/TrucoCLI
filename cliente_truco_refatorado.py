@@ -5,9 +5,13 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.columns import Columns
+from rich.progress import Progress, BarColumn, TextColumn
+from rich.align import Align
+from rich.text import Text
 
 from config import *
-from utils import debug_log, get_parceiro, e_carta_vermelha
+from utils import debug_log, get_parceiro, e_carta_vermelha, criar_barra_progresso, get_emoji_posicao, e_manilha, get_nome_manilha
+from stats import GameStats
 
 console = Console()
 
@@ -22,11 +26,16 @@ class TrucoClient:
         self.meu_id = None
         self.minha_mao = []
         self.vira = None
+        self.manilha = None
         self.nicks = {}
         self.placar = {time: 0 for time in TIMES}
         self.meu_time = None
         self.minha_posicao = None
         self.mesa_jogadas = []
+        self.historico_pontos = []
+        
+        # Estatísticas
+        self.stats = GameStats() if ENABLE_STATS else None
         
     def conectar(self):
         """Conecta ao servidor"""
@@ -76,58 +85,22 @@ class TrucoClient:
         try:
             console.clear()
         except Exception:
-            pass  # Ignora erro de limpeza em ambientes sem TTY
+            pass
         
-        # Header com Placar
-        table = Table(show_header=False, expand=True, border_style="blue", padding=(0, 2))
-        table.add_row(
-            f"[bold cyan]TIME A: {self.placar['A']}[/]",
-            f"[bold magenta]TIME B: {self.placar['B']}[/]"
-        )
-        console.print(table)
+        # Header com Placar Melhorado
+        self.draw_placar()
         
         # Informações do Jogador e Time
         if self.meu_id is not None:
-            parceiro_id = get_parceiro(self.meu_id)
-            parceiro_nome = self.nicks.get(parceiro_id, "???")
-            time_color = COR_TIME_A if self.meu_time == "A" else COR_TIME_B
-            adversarios_time = "B" if self.meu_time == "A" else "A"
-            
-            info_texto = (
-                f"[{time_color}]TIME {self.meu_time}[/]: "
-                f"[bold]{self.nicks.get(self.meu_id, '???')}[/] [{self.minha_posicao}] + "
-                f"{parceiro_nome} | "
-                f"[dim]Adversários: TIME {adversarios_time}[/]"
-            )
-            console.print(Panel(info_texto, border_style=time_color, expand=False))
+            self.draw_info_jogador()
         
-        # Vira
+        # Vira e Manilha
         if self.vira:
-            naipe_simbolo = NAIPE_SIMBOLOS.get(self.vira[1], self.vira[1][0])
-            cor_vira = "red" if e_carta_vermelha(self.vira[1]) else "white"
-            console.print(Panel(
-                f"VIRA: [bold yellow]{self.vira[0]}[/][{cor_vira}]{naipe_simbolo}[/]",
-                expand=True,
-                style="white"
-            ))
+            self.draw_vira()
         
         # Log da rodada
         if self.mesa_jogadas:
-            logs_formatados = []
-            jogadas_validas = [j for j in self.mesa_jogadas if j["forca"] > 0]
-            forca_maxima = max([j["forca"] for j in jogadas_validas]) if jogadas_validas else -1
-            
-            for jog in self.mesa_jogadas[-5:]:
-                linha = jog["msg"]
-                if jog["forca"] > 0 and jog["forca"] == forca_maxima:
-                    linha += " [bold green]← Fazendo[/]"
-                logs_formatados.append(linha)
-            
-            console.print(Panel(
-                "\n".join(logs_formatados),
-                title="LOG DA RODADA",
-                border_style="blue"
-            ))
+            self.draw_log_rodada()
         
         # Mão do Jogador
         self.render_cards(self.minha_mao)
@@ -135,7 +108,81 @@ class TrucoClient:
         if msg:
             console.print(f"\n[bold reverse] {msg} [/]")
     
-    def render_cards(self, cards, title="SUA MÃO"):
+    def draw_placar(self):
+        """Desenha placar com barra de progresso"""
+        table = Table(show_header=False, expand=True, border_style="blue", padding=(0, 2))
+        
+        # Time A
+        barra_a = criar_barra_progresso(self.placar['A'], PONTOS_VITORIA, largura=15)
+        col_a = f"[bold {COR_TIME_A}]TIME A: {self.placar['A']}/12[/]\n{barra_a}"
+        
+        # Time B  
+        barra_b = criar_barra_progresso(self.placar['B'], PONTOS_VITORIA, largura=15)
+        col_b = f"[bold {COR_TIME_B}]TIME B: {self.placar['B']}/12[/]\n{barra_b}"
+        
+        table.add_row(col_a, col_b)
+        console.print(table)
+        
+        # Histórico de pontos (últimos 5)
+        if self.historico_pontos:
+            historico_str = " → ".join(self.historico_pontos[-5:])
+            console.print(f"[dim]Histórico: {historico_str}[/]")
+    
+    def draw_info_jogador(self):
+        """Desenha informações do jogador"""
+        parceiro_id = get_parceiro(self.meu_id)
+        parceiro_nome = self.nicks.get(parceiro_id, "???")
+        time_color = COR_TIME_A if self.meu_time == "A" else COR_TIME_B
+        adversarios_time = "B" if self.meu_time == "A" else "A"
+        
+        emoji_posicao = get_emoji_posicao(self.minha_posicao)
+        
+        info_texto = (
+            f"[{time_color}]{ICON_PONTOS} TIME {self.meu_time}[/]: "
+            f"[bold]{self.nicks.get(self.meu_id, '???')}[/] "
+            f"{emoji_posicao} [{self.minha_posicao}] + {parceiro_nome} | "
+            f"[dim]Adversários: TIME {adversarios_time}[/]"
+        )
+        console.print(Panel(info_texto, border_style=time_color, expand=False))
+    
+    def draw_vira(self):
+        """Desenha vira e explicação de manilha"""
+        naipe_simbolo = NAIPE_SIMBOLOS.get(self.vira[1], self.vira[1][0])
+        cor_vira = "red" if e_carta_vermelha(self.vira[1]) else "white"
+        
+        # Calcula a manilha
+        if self.manilha is None:
+            idx_vira = ORDEM_CARTAS.index(self.vira[0])
+            self.manilha = ORDEM_CARTAS[(idx_vira + 1) % len(ORDEM_CARTAS)]
+        
+        nome_manilha = get_nome_manilha(self.manilha)
+        
+        vira_text = (
+            f"VIRA: [bold yellow]{self.vira[0]}[/][{cor_vira}]{naipe_simbolo}[/] "
+            f"| {ICON_MANILHA} MANILHA: [bold green]{self.manilha}[/] ({nome_manilha})"
+        )
+        console.print(Panel(vira_text, expand=True, style="white"))
+    
+    def draw_log_rodada(self):
+        """Desenha log da rodada com carta vencedora animada"""
+        logs_formatados = []
+        jogadas_validas = [j for j in self.mesa_jogadas if j["forca"] > 0]
+        forca_maxima = max([j["forca"] for j in jogadas_validas]) if jogadas_validas else -1
+        
+        for jog in self.mesa_jogadas[-5:]:
+            linha = jog["msg"]
+            # Animação na carta vencedora
+            if jog["forca"] > 0 and jog["forca"] == forca_maxima:
+                linha += f" [{COR_VENCEDOR}]← {ICON_CARTA_ALTA} FAZENDO[/]"
+            logs_formatados.append(linha)
+        
+        console.print(Panel(
+            "\n".join(logs_formatados),
+            title=f"[bold blue]📝 LOG DA RODADA[/]",
+            border_style="blue"
+        ))
+    
+    def render_cards(self, cards, title="🎴 SUA MÃO"):
         """Renderiza as cartas em formato visual"""
         if not cards:
             return
@@ -144,10 +191,20 @@ class TrucoClient:
         for i, carta in enumerate(cards):
             naipe_simbolo = NAIPE_SIMBOLOS.get(carta[1], carta[1][0])
             cor_naipe = "red" if e_carta_vermelha(carta[1]) else "white"
+            
+            # Destaca se é manilha
+            if self.manilha and e_manilha(carta, self.manilha):
+                card_content = f"[bold yellow]{ICON_MANILHA}[/]\n[bold]{carta[0]}[/]\n[{cor_naipe}]{naipe_simbolo}[/]"
+                border_style = "yellow"
+            else:
+                card_content = f"[bold]{carta[0]}[/]\n[{cor_naipe}]{naipe_simbolo}[/]"
+                border_style = "cyan"
+            
             cols.append(Panel(
-                f"[bold]{carta[0]}[/]\n[{cor_naipe}]{naipe_simbolo}[/]",
+                card_content,
                 title=f"[{i}]",
-                expand=False
+                expand=False,
+                border_style=border_style
             ))
         console.print(Panel(Columns(cols), title=title, border_style="cyan"))
     
@@ -155,8 +212,8 @@ class TrucoClient:
         """Pede ao jogador para fazer uma jogada"""
         opcoes = f"\n[green]Carta (0-{len(self.minha_mao)-1})"
         if n_queda > 1:
-            opcoes += " | 'V[num]' para Virar (ex: V0)"
-        opcoes += " | 'T' para Truco: [/]"
+            opcoes += " | 'V[num]' para Virar"
+        opcoes += f" | 'T' para {ICON_TRUCO}Truco | '/ajuda' para ajuda: [/]"
         
         debug_log(f"Pedindo input ao jogador {self.meu_id}...")
         
@@ -164,9 +221,28 @@ class TrucoClient:
             inp = console.input(opcoes).upper().strip()
             debug_log(f"Input recebido: '{inp}'")
             
+            # Comandos especiais
+            if inp in [CMD_AJUDA, "/AJUDA"]:
+                console.print(MSG_AJUDA)
+                console.input("\n[yellow]Pressione ENTER para continuar...[/]")
+                self.draw_screen("Sua vez!")
+                return self.pedir_jogada(n_queda)
+            
+            if inp in [CMD_STATS, "/STATS"]:
+                if self.stats:
+                    console.print(self.stats.get_stats_formatadas())
+                    console.print(self.stats.get_stats_sessao())
+                else:
+                    console.print("[yellow]Estatísticas desabilitadas[/]")
+                console.input("\n[yellow]Pressione ENTER para continuar...[/]")
+                self.draw_screen("Sua vez!")
+                return self.pedir_jogada(n_queda)
+            
             # Truco
             if inp == "T":
                 debug_log("TRUCO enviado")
+                if self.stats:
+                    self.stats.registrar_truco()
                 return ACAO_TRUCO
             
             # Carta virada
@@ -175,27 +251,42 @@ class TrucoClient:
                     idx = int(inp[1]) if len(inp) > 1 and inp[1].isdigit() else 0
                     idx = min(max(0, idx), len(self.minha_mao) - 1)
                     debug_log(f"Enviando carta virada (idx {idx})")
-                    return (self.minha_mao.pop(idx), True)
+                    carta = self.minha_mao.pop(idx)
+                    if self.stats:
+                        self.stats.registrar_carta(carta, e_manilha(carta, self.manilha), virada=True)
+                    return (carta, True)
                 except (ValueError, IndexError):
                     console.print("[red]Índice inválido! Jogando carta 0 virada.[/]")
                     time.sleep(1)
-                    return (self.minha_mao.pop(0), True)
+                    carta = self.minha_mao.pop(0)
+                    if self.stats:
+                        self.stats.registrar_carta(carta, e_manilha(carta, self.manilha), virada=True)
+                    return (carta, True)
             
             # Carta normal
             else:
                 idx = int(inp)
                 if 0 <= idx < len(self.minha_mao):
                     debug_log(f"Enviando carta normal (idx {idx})")
-                    return (self.minha_mao.pop(idx), False)
+                    carta = self.minha_mao.pop(idx)
+                    if self.stats:
+                        self.stats.registrar_carta(carta, e_manilha(carta, self.manilha), virada=False)
+                    return (carta, False)
                 else:
                     console.print(f"[red]Carta inválida! Escolha entre 0-{len(self.minha_mao)-1}[/]")
                     time.sleep(1)
-                    return (self.minha_mao.pop(0), False)
+                    carta = self.minha_mao.pop(0)
+                    if self.stats:
+                        self.stats.registrar_carta(carta, e_manilha(carta, self.manilha), virada=False)
+                    return (carta, False)
         
         except (ValueError, IndexError) as e:
             console.print(f"[red]Entrada inválida ({e})! Jogando carta 0 automaticamente.[/]")
             time.sleep(1)
-            return (self.minha_mao.pop(0), False)
+            carta = self.minha_mao.pop(0)
+            if self.stats:
+                self.stats.registrar_carta(carta, e_manilha(carta, self.manilha), virada=False)
+            return (carta, False)
         except (BrokenPipeError, ConnectionResetError, OSError) as e:
             console.print(f"[red]Erro de conexão: {e}[/]")
             return None
@@ -203,13 +294,37 @@ class TrucoClient:
     def pedir_resposta_truco(self, msg):
         """Pede ao jogador para responder ao truco"""
         try:
-            resp = console.input(f"\n[bold red]{msg} (S/N/A): [/]").upper().strip()
+            # Mensagem com confirmação
+            console.print(f"\n[{COR_ALERTA}]{ICON_TRUCO} {msg}[/]")
+            console.print("[dim]Digite 'S' para aceitar, 'N' para correr, 'A' para aumentar[/]")
+            
+            resp = console.input(f"[bold red]Sua resposta (S/N/A): [/]").upper().strip()
+            
+            # Confirmação antes de correr
+            if resp == RESPOSTA_NAO:
+                confirma = console.input("[yellow]⚠️  Tem certeza que quer CORRER? (S/N): [/]").upper().strip()
+                if confirma != "S":
+                    console.print("[green]Ok, vamos continuar![/]")
+                    return self.pedir_resposta_truco(msg)
+            
             if resp not in RESPOSTAS_VALIDAS:
-                console.print("[yellow]Resposta inválida! Usando 'N' (não aceitar)[/]")
+                console.print("[yellow]Resposta inválida! Usando 'N' (correr)[/]")
                 resp = RESPOSTA_NAO
+            
+            # Registra estatística
+            if self.stats:
+                if resp == RESPOSTA_SIM:
+                    self.stats.registrar_truco(aceito=True)
+                elif resp == RESPOSTA_NAO:
+                    self.stats.registrar_truco(corrido=True)
+                elif resp == RESPOSTA_AUMENTAR:
+                    self.stats.registrar_truco()
+            
             return resp
         except (KeyboardInterrupt, EOFError):
-            console.print("\n[yellow]Entrada cancelada! Usando 'N' (não aceitar)[/]")
+            console.print("\n[yellow]Entrada cancelada! Usando 'N' (correr)[/]")
+            if self.stats:
+                self.stats.registrar_truco(corrido=True)
             return RESPOSTA_NAO
         except (BrokenPipeError, ConnectionResetError, OSError) as e:
             console.print(f"[red]Erro de conexão: {e}[/]")
@@ -290,11 +405,70 @@ class TrucoClient:
             time.sleep(SCORE_DISPLAY_DELAY)
         
         elif tipo == MsgType.SCORE:
+            placar_anterior = self.placar.copy()
             self.placar = data["placar"]
-            self.draw_screen("PONTUAÇÃO ATUALIZADA")
+            
+            # Registra no histórico quem pontuou
+            for time in TIMES:
+                if self.placar[time] > placar_anterior[time]:
+                    diff = self.placar[time] - placar_anterior[time]
+                    self.historico_pontos.append(f"{time}+{diff}")
+            
+            # Registra estatísticas
+            if self.stats and "vencedor" in data:
+                self.stats.registrar_mao(data["vencedor"])
+            
+            # Animação de pontuação
+            self.draw_screen(f"{ICON_VITORIA} PONTUAÇÃO ATUALIZADA {ICON_VITORIA}")
+            
+            # Verifica fim de jogo
+            if max(self.placar.values()) >= PONTOS_VITORIA:
+                vencedor = "A" if self.placar["A"] >= PONTOS_VITORIA else "B"
+                self.mostrar_fim_jogo(vencedor)
+                if self.stats:
+                    self.stats.registrar_partida(vencedor)
+                    self.stats.salvar()
+            
             time.sleep(SCORE_DISPLAY_DELAY)
         
         return True
+    
+    def mostrar_fim_jogo(self, vencedor):
+        """Mostra tela de fim de jogo"""
+        console.clear()
+        
+        if vencedor == self.meu_time:
+            mensagem = f"""
+╔══════════════════════════════════════════════════════════╗
+║                                                          ║
+║              {ICON_VITORIA}  VITÓRIA! {ICON_VITORIA}                         ║
+║                                                          ║
+║          TIME {vencedor} VENCEU A PARTIDA!                       ║
+║                                                          ║
+║              Placar Final: {self.placar['A']} x {self.placar['B']}                     ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝
+"""
+            console.print(f"[{COR_SUCESSO}]{mensagem}[/]")
+        else:
+            mensagem = f"""
+╔══════════════════════════════════════════════════════════╗
+║                                                          ║
+║              {ICON_DERROTA}  DERROTA  {ICON_DERROTA}                        ║
+║                                                          ║
+║          TIME {vencedor} VENCEU A PARTIDA                        ║
+║                                                          ║
+║              Placar Final: {self.placar['A']} x {self.placar['B']}                     ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝
+"""
+            console.print(f"[{COR_ERRO}]{mensagem}[/]")
+        
+        # Mostra estatísticas se habilitado
+        if self.stats:
+            console.print(self.stats.get_stats_sessao())
+        
+        console.input("\n[yellow]Pressione ENTER para sair...[/]")
     
     def run(self):
         """Loop principal do cliente"""

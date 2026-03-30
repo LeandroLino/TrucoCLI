@@ -50,3 +50,33 @@ def formatar_carta(carta, usar_simbolo=True):
     if usar_simbolo:
         return f"{valor}{NAIPE_SIMBOLOS.get(naipe, naipe[0])}"
     return f"{valor} de {naipe}"
+
+def criar_barra_progresso(atual, maximo, largura=20):
+    """Cria barra de progresso visual"""
+    preenchido = int((atual / maximo) * largura)
+    vazio = largura - preenchido
+    return f"[{'█' * preenchido}{'░' * vazio}] {atual}/{maximo}"
+
+def get_emoji_posicao(posicao):
+    """Retorna emoji da posição"""
+    from config import POSICOES_EMOJI
+    return POSICOES_EMOJI.get(posicao, "")
+
+def e_manilha(carta, manilha):
+    """Verifica se a carta é manilha"""
+    return carta[0] == manilha
+
+def get_nome_manilha(manilha):
+    """Retorna o nome descritivo da manilha"""
+    nomes = {
+        "4": "Zap", "5": "Cinco", "6": "Seis", "7": "Sete",
+        "Q": "Dama", "J": "Valete", "K": "Rei", "A": "Ás",
+        "2": "Dois", "3": "Três"
+    }
+    return nomes.get(manilha, manilha)
+
+def animar_texto(texto, delay=0.05):
+    """Retorna texto com efeito de animação (para simulação)"""
+    import time
+    # Simulação simples - em produção pode usar rich.live
+    return texto
