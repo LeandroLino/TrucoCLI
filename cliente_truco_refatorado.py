@@ -34,6 +34,9 @@ class TrucoClient:
         self.mesa_jogadas = []
         self.historico_pontos = []
         
+        # Contador de quedas na mão atual
+        self.quedas_vencidas = {"A": 0, "B": 0}
+        
         # Estatísticas
         self.stats = GameStats() if ENABLE_STATS else None
         
@@ -114,11 +117,13 @@ class TrucoClient:
         
         # Time A
         barra_a = criar_barra_progresso(self.placar['A'], PONTOS_VITORIA, largura=15)
-        col_a = f"[bold {COR_TIME_A}]TIME A: {self.placar['A']}/12[/]\n{barra_a}"
+        quedas_a = "●" * self.quedas_vencidas["A"] + "○" * (2 - self.quedas_vencidas["A"])
+        col_a = f"[bold {COR_TIME_A}]TIME A: {self.placar['A']}/12[/]\n{barra_a}\n[dim]Quedas: {quedas_a}[/]"
         
         # Time B  
         barra_b = criar_barra_progresso(self.placar['B'], PONTOS_VITORIA, largura=15)
-        col_b = f"[bold {COR_TIME_B}]TIME B: {self.placar['B']}/12[/]\n{barra_b}"
+        quedas_b = "●" * self.quedas_vencidas["B"] + "○" * (2 - self.quedas_vencidas["B"])
+        col_b = f"[bold {COR_TIME_B}]TIME B: {self.placar['B']}/12[/]\n{barra_b}\n[dim]Quedas: {quedas_b}[/]"
         
         table.add_row(col_a, col_b)
         console.print(table)
@@ -337,6 +342,8 @@ class TrucoClient:
             self.mesa_jogadas = []
             self.meu_time = data.get("time", "?")
             self.minha_posicao = data.get("posicao", "???")
+            # Reseta contador de quedas ao iniciar nova mão
+            self.quedas_vencidas = {"A": 0, "B": 0}
             self.draw_screen("Nova mão iniciada!")
         
         elif tipo == MsgType.ONZE:
@@ -388,8 +395,16 @@ class TrucoClient:
         
         elif tipo == MsgType.RESULT:
             debug_log(f"RESULT recebido: {data['msg']}")
+            
+            # Extrai informação do vencedor da queda
+            msg = data['msg']
+            if "Time A" in msg and "EMPATE" not in msg:
+                self.quedas_vencidas["A"] += 1
+            elif "Time B" in msg and "EMPATE" not in msg:
+                self.quedas_vencidas["B"] += 1
+            
             self.mesa_jogadas.append({
-                "msg": f"[bold magenta]>> {data['msg']}[/]",
+                "msg": f"[bold magenta]>> {msg}[/]",
                 "forca": -1
             })
             self.draw_screen()
