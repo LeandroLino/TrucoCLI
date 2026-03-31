@@ -69,7 +69,7 @@ def e_manilha(carta, manilha):
 def get_nome_manilha(manilha):
     """Retorna o nome descritivo da manilha"""
     nomes = {
-        "4": "Zap", "5": "Cinco", "6": "Seis", "7": "Sete",
+        "4": "Quatro", "5": "Cinco", "6": "Seis", "7": "Sete",
         "Q": "Dama", "J": "Valete", "K": "Rei", "A": "Ás",
         "2": "Dois", "3": "Três"
     }
@@ -80,3 +80,15 @@ def animar_texto(texto, delay=0.05):
     import time
     # Simulação simples - em produção pode usar rich.live
     return texto
+
+def formatar_carta_para_select(carta, index, manilha=None):
+    """Formata carta para exibição no menu de seleção"""
+    from config import NAIPE_SIMBOLOS
+    valor, naipe = carta
+    naipe_simbolo = NAIPE_SIMBOLOS.get(naipe, naipe[0])
+    
+    # Adiciona indicador se for manilha
+    if manilha and e_manilha(carta, manilha):
+        return f"[{index}] {valor}{naipe_simbolo} 💎"
+    
+    return f"[{index}] {valor}{naipe_simbolo}"

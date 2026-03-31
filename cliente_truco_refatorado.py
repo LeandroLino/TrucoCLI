@@ -1,6 +1,9 @@
 import socket
 import pickle
 import time
+import sys
+import tty
+import termios
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -10,7 +13,7 @@ from rich.align import Align
 from rich.text import Text
 
 from config import *
-from utils import debug_log, get_parceiro, e_carta_vermelha, criar_barra_progresso, get_emoji_posicao, e_manilha, get_nome_manilha
+from utils import debug_log, get_parceiro, e_carta_vermelha, criar_barra_progresso, get_emoji_posicao, e_manilha, get_nome_manilha, formatar_carta_para_select
 from stats import GameStats
 
 console = Console()
@@ -28,7 +31,7 @@ class TrucoClient:
         self.vira = None
         self.manilha = None
         self.nicks = {}
-        self.placar = {time: 0 for time in TIMES}
+        self.placar = {team: 0 for team in TIMES}
         self.meu_time = None
         self.minha_posicao = None
         self.mesa_jogadas = []
@@ -205,8 +208,156 @@ class TrucoClient:
             ))
         console.print(Panel(Columns(cols), title=title, border_style="cyan"))
     
+    def selecionar_carta_interativo(self, n_queda):
+        """Seleção interativa de carta com setas do teclado"""
+        opcoes = []
+        
+        # Monta lista de opções
+        for i, carta in enumerate(self.minha_mao):
+            opcoes.append({
+                "tipo": "carta",
+                "index": i,
+                "label": formatar_carta_para_select(carta, i, self.manilha),
+                "virada": False
+            })
+        
+        # Adiciona opção de virar (se permitido)
+        if n_queda > 1:
+            for i, carta in enumerate(self.minha_mao):
+                opcoes.append({
+                    "tipo": "virada",
+                    "index": i,
+                    "label": f"[{i}] Virar carta 🔄",
+                    "virada": True
+                })
+        
+        # Adiciona opção de truco
+        opcoes.append({
+            "tipo": "truco",
+            "label": f"{ICON_TRUCO} Pedir Truco",
+            "virada": False
+        })
+        
+        # Adiciona comandos
+        opcoes.append({
+            "tipo": "comando",
+            "comando": CMD_AJUDA,
+            "label": "❓ Ajuda"
+        })
+        opcoes.append({
+            "tipo": "comando",
+            "comando": CMD_STATS,
+            "label": "📊 Estatísticas"
+        })
+        
+        selecionado = 0
+        
+        console.print("\n")  # Espaço antes do menu
+        
+        while True:
+            # Monta o menu
+            menu_lines = ["[bold cyan]Use ↑/↓ para navegar, ENTER para selecionar:[/]"]
+            menu_lines.append("")
+            
+            for i, opcao in enumerate(opcoes):
+                if i == selecionado:
+                    menu_lines.append(f"[bold green]► {opcao['label']}[/]")
+                else:
+                    menu_lines.append(f"  {opcao['label']}")
+            
+            # Mostra o menu
+            for line in menu_lines:
+                console.print(line)
+            
+            # Captura tecla
+            tecla = self.get_key()
+            
+            # Limpa o menu (volta N linhas e limpa)
+            for _ in range(len(menu_lines)):
+                # Move cursor para cima e limpa linha
+                sys.stdout.write('\033[F\033[K')
+            sys.stdout.flush()
+            
+            if tecla == '\x1b':  # ESC sequence
+                next_key = self.get_key()
+                if next_key == '[':
+                    arrow = self.get_key()
+                    if arrow == 'A':  # Seta para cima
+                        selecionado = (selecionado - 1) % len(opcoes)
+                    elif arrow == 'B':  # Seta para baixo
+                        selecionado = (selecionado + 1) % len(opcoes)
+            
+            elif tecla == '\r' or tecla == '\n':  # ENTER
+                # Limpa o menu uma última vez
+                for _ in range(len(menu_lines)):
+                    sys.stdout.write('\033[F\033[K')
+                sys.stdout.flush()
+                break
+        
+        # Processa a opção escolhida
+        opcao_escolhida = opcoes[selecionado]
+        
+        if opcao_escolhida["tipo"] == "truco":
+            console.print(f"[bold yellow]{ICON_TRUCO} Pedindo Truco![/]")
+            return ACAO_TRUCO
+        
+        elif opcao_escolhida["tipo"] == "comando":
+            cmd = opcao_escolhida["comando"]
+            if cmd == CMD_AJUDA:
+                console.print(MSG_AJUDA)
+                console.input("\n[yellow]Pressione ENTER para continuar...[/]")
+                self.draw_screen("Sua vez!")
+                return self.selecionar_carta_interativo(n_queda)
+            elif cmd == CMD_STATS:
+                if self.stats:
+                    console.print(self.stats.get_stats_formatadas())
+                    console.print(self.stats.get_stats_sessao())
+                else:
+                    console.print("[yellow]Estatísticas desabilitadas[/]")
+                console.input("\n[yellow]Pressione ENTER para continuar...[/]")
+                self.draw_screen("Sua vez!")
+                return self.selecionar_carta_interativo(n_queda)
+        
+        else:  # carta normal ou virada
+            idx = opcao_escolhida["index"]
+            virada = opcao_escolhida["virada"]
+            carta = self.minha_mao.pop(idx)
+            
+            if virada:
+                console.print(f"[bold yellow]🔄 Virando carta {idx}![/]")
+            else:
+                carta_fmt = formatar_carta_para_select(carta, idx, self.manilha)
+                console.print(f"[bold green]✓ Jogando {carta_fmt}[/]")
+            
+            if self.stats:
+                self.stats.registrar_carta(carta, e_manilha(carta, self.manilha), virada=virada)
+            
+            return (carta, virada)
+    
+    def get_key(self):
+        """Captura uma tecla do teclado"""
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ch
+    
     def pedir_jogada(self, n_queda):
         """Pede ao jogador para fazer uma jogada"""
+        debug_log(f"Pedindo input ao jogador {self.meu_id}...")
+        
+        # Modo interativo
+        if USE_INTERACTIVE_SELECT:
+            try:
+                return self.selecionar_carta_interativo(n_queda)
+            except Exception as e:
+                console.print(f"[yellow]Erro no modo interativo: {e}. Usando modo texto.[/]")
+                # Fallback para modo texto
+        
+        # Modo texto (fallback ou desabilitado)
         opcoes = f"\n[green]Carta (0-{len(self.minha_mao)-1})"
         if n_queda > 1:
             opcoes += " | 'V[num]' para Virar"
@@ -426,10 +577,10 @@ class TrucoClient:
             self.placar = data["placar"]
             
             # Registra no histórico quem pontuou
-            for time in TIMES:
-                if self.placar[time] > placar_anterior[time]:
-                    diff = self.placar[time] - placar_anterior[time]
-                    self.historico_pontos.append(f"{time}+{diff}")
+            for team in TIMES:
+                if self.placar[team] > placar_anterior[team]:
+                    diff = self.placar[team] - placar_anterior[team]
+                    self.historico_pontos.append(f"{team}+{diff}")
             
             # Registra estatísticas
             if self.stats and "vencedor" in data:
