@@ -65,6 +65,176 @@ class TrucoClient:
             console.print("\n[red]Conexão cancelada pelo usuário[/]")
             return False
     
+    def mostrar_lobby(self, estado):
+        """Mostra interface do lobby"""
+        console.clear()
+        
+        sala_id = estado.get("sala_id", "????")
+        jogadores = estado.get("jogadores", [])
+        team_a_count = estado.get("team_a_count", 0)
+        team_b_count = estado.get("team_b_count", 0)
+        total = estado.get("total", 0)
+        
+        # Header
+        header = f"""
+╔══════════════════════════════════════════════════════════╗
+║                  🎴 LOBBY - TRUCO CLI                    ║
+╠══════════════════════════════════════════════════════════╣
+║                                                          ║
+║  SALA: #{sala_id}                   Jogadores: {total}/4            ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝
+"""
+        console.print(header, style="bold cyan")
+        
+        # Times
+        console.print("\n")
+        
+        # Time A
+        time_a_status = "CHEIO" if team_a_count >= 2 else f"{team_a_count}/2"
+        time_a_panel = []
+        time_a_panel.append(f"[bold cyan]TIME A (🔵) [{time_a_status}][/]")
+        time_a_panel.append("")
+        
+        jogadores_a = [j for j in jogadores if j["time"] == "A"]
+        for i, jogador in enumerate(jogadores_a):
+            pronto = "✓" if jogador["pronto"] else " "
+            time_a_panel.append(f"[{pronto}] {jogador['nick']}")
+        
+        for _ in range(2 - len(jogadores_a)):
+            time_a_panel.append("[ ] Aguardando...")
+        
+        # Time B
+        time_b_status = "CHEIO" if team_b_count >= 2 else f"{team_b_count}/2"
+        time_b_panel = []
+        time_b_panel.append(f"[bold magenta]TIME B (🔴) [{time_b_status}][/]")
+        time_b_panel.append("")
+        
+        jogadores_b = [j for j in jogadores if j["time"] == "B"]
+        for i, jogador in enumerate(jogadores_b):
+            pronto = "✓" if jogador["pronto"] else " "
+            time_b_panel.append(f"[{pronto}] {jogador['nick']}")
+        
+        for _ in range(2 - len(jogadores_b)):
+            time_b_panel.append("[ ] Aguardando...")
+        
+        # Exibe times lado a lado
+        table = Table.grid(padding=2)
+        table.add_column()
+        table.add_column()
+        
+        table.add_row(
+            Panel("\n".join(time_a_panel), border_style="cyan"),
+            Panel("\n".join(time_b_panel), border_style="magenta")
+        )
+        
+        console.print(table)
+        
+        # Jogadores sem time
+        sem_time = [j for j in jogadores if j["time"] is None]
+        if sem_time:
+            console.print("\n[yellow]Aguardando escolha de time:[/]")
+            for j in sem_time:
+                console.print(f"  • {j['nick']}")
+        
+        # Instruções
+        console.print("\n" + "─" * 60)
+        console.print("[bold yellow]Comandos:[/]")
+        console.print("  [A] - Entrar no Time A")
+        console.print("  [B] - Entrar no Time B")
+        console.print("  [S] - Sair do time atual")
+        console.print("  [R] - Marcar como Pronto")
+        
+        # Aviso se times estão cheios
+        if team_a_count >= 2 and team_b_count >= 2:
+            console.print("\n[dim]ℹ️  Ambos os times estão cheios (2x2).[/]")
+            console.print("[dim]   Use [S] para sair e liberar vaga.[/]")
+        
+        console.print("─" * 60)
+    
+    def processar_lobby(self):
+        """Processa fase de lobby"""
+        console.clear()
+        console.print("[bold cyan]Conectando ao lobby...[/]")
+        
+        # Recebe mensagem de entrada no lobby
+        data = self.receber_mensagem()
+        if data is None or data.get("tipo") != "LOBBY_JOINED":
+            console.print("[red]Erro ao entrar no lobby[/]")
+            return False
+        
+        sala_id = data.get("sala_id")
+        console.print(f"[green]{data.get('msg', '')}[/]")
+        console.print(f"[bold cyan]Sala: #{sala_id}[/]")
+        time.sleep(0.5)
+        
+        ultimo_estado = None
+        
+        # Loop do lobby
+        while True:
+            # Verifica se há mensagens do servidor com timeout curto
+            self.client.settimeout(0.5)
+            try:
+                raw_data = self.client.recv(BUFFER_SIZE)
+                if not raw_data:
+                    console.print("[red]Servidor desconectado[/]")
+                    return False
+                
+                data = pickle.loads(raw_data)
+                tipo = data.get("tipo")
+                
+                if tipo == MsgType.LOBBY_STATE:
+                    estado = data.get("estado", {})
+                    if estado != ultimo_estado:
+                        self.mostrar_lobby(estado)
+                        ultimo_estado = estado
+                
+                elif tipo == MsgType.LOBBY_START:
+                    console.clear()
+                    console.print("[bold green]🎮 Iniciando partida...[/]")
+                    time.sleep(1)
+                    self.client.settimeout(None)
+                    return True
+                
+                elif tipo == "ERROR":
+                    console.print(f"[red]{data.get('msg', 'Erro')}[/]")
+                    time.sleep(0.5)
+            
+            except socket.timeout:
+                # Timeout normal - permite input do usuário
+                try:
+                    import select
+                    if select.select([sys.stdin], [], [], 0)[0]:
+                        escolha = input().upper().strip()
+                        
+                        if escolha == "A":
+                            self.client.sendall(pickle.dumps({
+                                "tipo": MsgType.LOBBY_JOIN_TEAM,
+                                "time": "A"
+                            }))
+                        elif escolha == "B":
+                            self.client.sendall(pickle.dumps({
+                                "tipo": MsgType.LOBBY_JOIN_TEAM,
+                                "time": "B"
+                            }))
+                        elif escolha == "S":
+                            self.client.sendall(pickle.dumps({
+                                "tipo": MsgType.LOBBY_LEAVE_TEAM
+                            }))
+                        elif escolha == "R":
+                            self.client.sendall(pickle.dumps({
+                                "tipo": MsgType.LOBBY_READY
+                            }))
+                
+                except Exception:
+                    pass
+            
+            except Exception as e:
+                console.print(f"[red]Erro no lobby: {e}[/]")
+                return False
+        
+        return False
+    
     def receber_mensagem(self):
         """Recebe mensagem do servidor"""
         try:
@@ -644,6 +814,11 @@ class TrucoClient:
             return
         
         if not self.enviar_nick():
+            self.client.close()
+            return
+        
+        # Fase de lobby
+        if not self.processar_lobby():
             self.client.close()
             return
         

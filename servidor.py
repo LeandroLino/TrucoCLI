@@ -2,8 +2,151 @@ import socket
 import pickle
 import random
 import time
+import string
 from config import *
 from utils import log, debug_log, get_time_jogador, get_adversarios, get_emoji_time, calcular_forca_carta, formatar_carta
+
+class Lobby:
+    """Gerencia o lobby de espera antes do jogo começar"""
+    def __init__(self, sala_id):
+        self.sala_id = sala_id
+        self.jogadores = {}  # {socket: {"nick": str, "time": str, "pronto": bool}}
+        self.team_a = []
+        self.team_b = []
+    
+    def adicionar_jogador(self, client_socket, nick):
+        """Adiciona jogador ao lobby"""
+        self.jogadores[client_socket] = {
+            "nick": nick,
+            "time": None,
+            "pronto": False
+        }
+        log(f"   {nick} entrou no lobby. ({len(self.jogadores)}/4)", "LOBBY")
+    
+    def sair_time(self, client_socket):
+        """Remove jogador do time atual"""
+        if client_socket not in self.jogadores:
+            return False
+        
+        old_time = self.jogadores[client_socket]["time"]
+        
+        # Remove do time
+        if old_time == "A" and client_socket in self.team_a:
+            self.team_a.remove(client_socket)
+        elif old_time == "B" and client_socket in self.team_b:
+            self.team_b.remove(client_socket)
+        
+        # Reseta estado do jogador
+        self.jogadores[client_socket]["time"] = None
+        self.jogadores[client_socket]["pronto"] = False
+        
+        return True
+    
+    def mudar_time(self, client_socket, time):
+        """Muda jogador de time"""
+        if client_socket not in self.jogadores:
+            return False
+        
+        # Pega o time atual do jogador
+        old_time = self.jogadores[client_socket]["time"]
+        
+        # Se já está no time solicitado, não faz nada
+        if old_time == time:
+            return True
+        
+        # Remove do time anterior ANTES de verificar vagas
+        if old_time == "A" and client_socket in self.team_a:
+            self.team_a.remove(client_socket)
+            self.jogadores[client_socket]["time"] = None
+        elif old_time == "B" and client_socket in self.team_b:
+            self.team_b.remove(client_socket)
+            self.jogadores[client_socket]["time"] = None
+        
+        # Agora verifica vagas no novo time
+        if time == "A":
+            if len(self.team_a) < 2:
+                self.team_a.append(client_socket)
+                self.jogadores[client_socket]["time"] = "A"
+                # Limpa flag de pronto ao mudar de time
+                self.jogadores[client_socket]["pronto"] = False
+                return True
+            else:
+                # Time cheio - volta para o time anterior
+                if old_time == "A":
+                    self.team_a.append(client_socket)
+                    self.jogadores[client_socket]["time"] = "A"
+                elif old_time == "B":
+                    self.team_b.append(client_socket)
+                    self.jogadores[client_socket]["time"] = "B"
+                return False
+        
+        elif time == "B":
+            if len(self.team_b) < 2:
+                self.team_b.append(client_socket)
+                self.jogadores[client_socket]["time"] = "B"
+                # Limpa flag de pronto ao mudar de time
+                self.jogadores[client_socket]["pronto"] = False
+                return True
+            else:
+                # Time cheio - volta para o time anterior
+                if old_time == "A":
+                    self.team_a.append(client_socket)
+                    self.jogadores[client_socket]["time"] = "A"
+                elif old_time == "B":
+                    self.team_b.append(client_socket)
+                    self.jogadores[client_socket]["time"] = "B"
+                return False
+        
+        return False
+    
+    def marcar_pronto(self, client_socket):
+        """Marca jogador como pronto"""
+        if client_socket in self.jogadores:
+            self.jogadores[client_socket]["pronto"] = True
+            return True
+        return False
+    
+    def todos_prontos(self):
+        """Verifica se todos os 4 jogadores estão prontos"""
+        if len(self.jogadores) != 4:
+            return False
+        if len(self.team_a) != 2 or len(self.team_b) != 2:
+            return False
+        return all(j["pronto"] for j in self.jogadores.values())
+    
+    def get_estado(self):
+        """Retorna estado atual do lobby"""
+        jogadores_list = []
+        for sock, data in self.jogadores.items():
+            jogadores_list.append({
+                "nick": data["nick"],
+                "time": data["time"],
+                "pronto": data["pronto"]
+            })
+        
+        return {
+            "sala_id": self.sala_id,
+            "jogadores": jogadores_list,
+            "team_a_count": len(self.team_a),
+            "team_b_count": len(self.team_b),
+            "total": len(self.jogadores)
+        }
+    
+    def get_mapeamento_ids(self):
+        """Retorna mapeamento de sockets para IDs do jogo"""
+        # Time A: IDs 0 e 2
+        # Time B: IDs 1 e 3
+        mapeamento = {}
+        id_a = [0, 2]
+        id_b = [1, 3]
+        
+        for i, sock in enumerate(self.team_a):
+            mapeamento[sock] = id_a[i]
+        
+        for i, sock in enumerate(self.team_b):
+            mapeamento[sock] = id_b[i]
+        
+        return mapeamento
 
 class TrucoServer:
     def __init__(self, host=SERVER_HOST, port=SERVER_PORT):
@@ -366,25 +509,146 @@ class TrucoServer:
         log(f"⚖️  Mão empatou!", "GAME")
         return "EMPATE", False
 
-    def start(self):
-        """Inicia o servidor e gerencia a partida"""
-        log("Servidor Online. Aguardando 4 nicks...", "WAIT")
+    def gerar_sala_id(self):
+        """Gera ID único para a sala"""
+        return ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    
+    def broadcast_lobby(self, lobby, sock_mapeamento):
+        """Envia estado do lobby para todos os jogadores"""
+        estado = lobby.get_estado()
+        for sock in lobby.jogadores.keys():
+            try:
+                sock.sendall(pickle.dumps({"tipo": MsgType.LOBBY_STATE, "estado": estado}))
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+    
+    def gerenciar_lobby(self):
+        """Gerencia o lobby até todos estarem prontos"""
+        sala_id = self.gerar_sala_id()
+        lobby = Lobby(sala_id)
+        sock_mapeamento = {}  # {socket: client_index}
         
-        # Aguarda 4 jogadores
-        while len(self.clients) < MAX_PLAYERS:
+        log(f"🎴 Sala criada: #{sala_id}", "LOBBY")
+        log("Aguardando jogadores...", "LOBBY")
+        
+        # Aceita 4 jogadores no lobby
+        while len(lobby.jogadores) < MAX_PLAYERS:
             try:
                 c, addr = self.server.accept()
                 log(f"   Conexão recebida de {addr}", "INFO")
+                
+                # Recebe nick
                 nick = pickle.loads(c.recv(BUFFER_SIZE))
-                self.nicks[len(self.clients)] = nick
-                self.clients.append(c)
-                log(f"   Jogador {len(self.clients)}/{MAX_PLAYERS} conectado: {nick}", "WAIT")
+                lobby.adicionar_jogador(c, nick)
+                sock_mapeamento[c] = len(lobby.jogadores) - 1
+                
+                # Envia confirmação e sala_id
+                c.sendall(pickle.dumps({
+                    "tipo": "LOBBY_JOINED",
+                    "sala_id": sala_id,
+                    "msg": f"Bem-vindo ao lobby, {nick}!"
+                }))
+                
+                # Pequeno delay para garantir que o cliente processou a mensagem anterior
+                time.sleep(0.1)
+                
+                # Atualiza todos sobre o estado do lobby
+                self.broadcast_lobby(lobby, sock_mapeamento)
+                
             except (EOFError, ConnectionResetError, OSError) as e:
                 log(f"Erro ao conectar cliente: {e}", "ERROR")
                 continue
         
-        log("🎮 Todos conectados! Iniciando partida...", "INFO")
+        log("✅ 4 jogadores conectados! Aguardando seleção de times...", "LOBBY")
+        
+        # Envia estado inicial para todos
+        self.broadcast_lobby(lobby, sock_mapeamento)
+        
+        # Loop do lobby - aguarda escolha de times e prontos
+        ultima_atualizacao = time.time()
+        while not lobby.todos_prontos():
+            # Atualiza estado periodicamente (a cada segundo) mesmo sem mudanças
+            tempo_atual = time.time()
+            if tempo_atual - ultima_atualizacao > 1.0:
+                self.broadcast_lobby(lobby, sock_mapeamento)
+                ultima_atualizacao = tempo_atual
+            
+            # Recebe ações dos jogadores
+            for sock in list(lobby.jogadores.keys()):
+                try:
+                    sock.setblocking(False)
+                    try:
+                        data = pickle.loads(sock.recv(BUFFER_SIZE))
+                        
+                        if data["tipo"] == MsgType.LOBBY_JOIN_TEAM:
+                            time_escolhido = data["time"]
+                            if lobby.mudar_time(sock, time_escolhido):
+                                log(f"   {lobby.jogadores[sock]['nick']} entrou no Time {time_escolhido}", "LOBBY")
+                                # Atualiza imediatamente após mudança
+                                self.broadcast_lobby(lobby, sock_mapeamento)
+                            else:
+                                sock.sendall(pickle.dumps({
+                                    "tipo": "ERROR",
+                                    "msg": f"Time {time_escolhido} está cheio!"
+                                }))
+                        
+                        elif data["tipo"] == MsgType.LOBBY_LEAVE_TEAM:
+                            if lobby.sair_time(sock):
+                                log(f"   {lobby.jogadores[sock]['nick']} saiu do time", "LOBBY")
+                                # Atualiza imediatamente após mudança
+                                self.broadcast_lobby(lobby, sock_mapeamento)
+                            else:
+                                sock.sendall(pickle.dumps({
+                                    "tipo": "ERROR",
+                                    "msg": "Erro ao sair do time!"
+                                }))
+                        
+                        elif data["tipo"] == MsgType.LOBBY_READY:
+                            if lobby.jogadores[sock]["time"] is not None:
+                                lobby.marcar_pronto(sock)
+                                log(f"   {lobby.jogadores[sock]['nick']} está pronto!", "LOBBY")
+                                # Atualiza imediatamente após mudança
+                                self.broadcast_lobby(lobby, sock_mapeamento)
+                            else:
+                                sock.sendall(pickle.dumps({
+                                    "tipo": "ERROR",
+                                    "msg": "Escolha um time primeiro!"
+                                }))
+                        
+                    except BlockingIOError:
+                        pass
+                    finally:
+                        sock.setblocking(True)
+                        
+                except (EOFError, ConnectionResetError, OSError):
+                    pass
+            
+            time.sleep(LOBBY_UPDATE_INTERVAL)
+        
+        log("🎮 Todos prontos! Iniciando partida...", "LOBBY")
+        
+        # Mapeia sockets para IDs de jogo
+        id_mapping = lobby.get_mapeamento_ids()
+        
+        # Cria lista de clients ordenada por ID
+        self.clients = [None] * MAX_PLAYERS
+        self.nicks = {}
+        
+        for sock, game_id in id_mapping.items():
+            self.clients[game_id] = sock
+            self.nicks[game_id] = lobby.jogadores[sock]["nick"]
+        
+        # Notifica início do jogo
+        for sock in lobby.jogadores.keys():
+            sock.sendall(pickle.dumps({"tipo": MsgType.LOBBY_START}))
+        
+        time.sleep(1)
         self.broadcast({"tipo": MsgType.NICKS, "lista": self.nicks})
+    
+    def start(self):
+        """Inicia o servidor e gerencia a partida"""
+        # Fase de lobby
+        self.gerenciar_lobby()
         
         # Loop principal da partida
         pe_atual = 0

@@ -1,117 +1,80 @@
 # 🎴 TrucoCLI
 
-Jogo de Truco para 4 jogadores via terminal usando Python e Rich.
+Jogo de Truco Paulista para 4 jogadores via terminal.
 
-## 🚀 Quick Start
+## 🚀 Como Jogar
 
 ```bash
-# Instalar dependências
+# 1. Instalar
 pip install rich
 
-# Terminal 1 - Servidor
-python3 servidor_truco_refatorado.py
+# 2. Iniciar servidor (1 terminal)
+python3 servidor.py
 
-# Terminais 2, 3, 4, 5 - Clientes (4 jogadores)
-python3 cliente_truco_refatorado.py
+# 3. Conectar jogadores (4 terminais)
+python3 cliente.py
 ```
 
-## 📋 Requisitos
+## 🎮 Comandos
 
-- Python 3.7+
-- rich (`pip install rich`)
+### Lobby (escolha de times)
+- `A` - Entrar no Time A (🔵)
+- `B` - Entrar no Time B (🔴)
+- `S` - Sair do time
+- `R` - Marcar pronto
 
-## 🎮 Como Jogar
-
-### **Times:**
-- **Time A** (🔵): Jogadores 0 e 2
-- **Time B** (🔴): Jogadores 1 e 3
-
-### **Comandos no Jogo:**
-- `0`, `1`, `2` - Jogar carta (índice da mão)
+### Durante o jogo
+- `0`, `1`, `2` - Jogar carta
 - `T` - Pedir Truco
-- `V0`, `V1`, `V2` - Jogar carta virada (a partir da 2ª queda)
+- `V0`, `V1`, `V2` - Jogar carta virada
 
-### **Responder Truco:**
+### Responder Truco
 - `S` - Aceitar
 - `N` - Correr
-- `A` - Aumentar (6, 9, 12)
+- `A` - Aumentar (6/9/12)
 
-## 🔧 Configuração
+### Comandos especiais
+- `/ajuda` - Mostrar ajuda
+- `/stats` - Ver estatísticas
+- `/sair` - Sair do jogo
 
-### **Ativar/Desativar Debug:**
+## ⚙️ Configuração
+
 ```bash
-python3 toggle_debug.py status  # Ver status
-python3 toggle_debug.py on      # Ativar
-python3 toggle_debug.py off     # Desativar
-python3 toggle_debug.py         # Alternar
+# Debug
+python3 debug.py        # Alternar
+python3 debug.py on     # Ativar
+python3 debug.py off    # Desativar
+
+# Editar config.py para ajustar portas, delays, etc
 ```
 
-### **Editar Configurações:**
-Edite `config.py` para ajustar:
-- Portas e hosts
-- Tempos de delay
-- Pontos para vitória
-- etc.
-
-## 📁 Estrutura do Projeto
+## 📁 Arquivos
 
 ```
 TrucoCLI/
-├── config.py                      # Configurações
-├── utils.py                       # Funções utilitárias
-├── servidor_truco_refatorado.py   # Servidor (USE ESTE)
-├── cliente_truco_refatorado.py    # Cliente (USE ESTE)
-├── toggle_debug.py                # Controle de debug
-├── servidor_truco_4p.py           # [Versão antiga]
-├── cliente_truco_4p.py            # [Versão antiga]
-└── README.md                      # Este arquivo
+├── servidor.py        # Servidor do jogo
+├── cliente.py         # Cliente (jogador)
+├── config.py          # Configurações
+├── utils.py           # Funções auxiliares
+├── stats.py           # Sistema de estatísticas
+├── debug.py           # Controle de debug
+└── docs/              # Documentação detalhada
 ```
 
-## 📖 Documentação
+## ✨ Features
 
-- [REFATORACAO_COMPLETA.md](REFATORACAO_COMPLETA.md) - Detalhes da refatoração
-- [REFATORACAO.md](REFATORACAO.md) - Histórico de melhorias
-
-## 🎯 Features
-
-- ✅ Jogo completo de Truco Paulista (4 jogadores)
-- ✅ Sistema de Truco/6/9/12
+- ✅ Lobby com escolha de times
+- ✅ Truco Paulista completo (1/3/6/9/12)
 - ✅ Mão de 11
 - ✅ Carta virada
-- ✅ Interface colorida (Rich)
-- ✅ Debug configurável
-- ✅ Tratamento robusto de erros
-- ✅ Código refatorado e documentado
+- ✅ Interface colorida
+- ✅ Estatísticas persistentes
 
-## 🐛 Debug
+## 📖 Mais Info
 
-Com debug ativado, você verá logs detalhados:
-```
-[20:01:18] [DEBUG] → Enviando TURN para Jogador1 (ID 0)
-[20:01:18] [DEBUG] → TURN enviado para Jogador1
-[20:01:18] [DEBUG] → Aguardando resposta de Jogador1...
-```
+Veja a pasta `docs/` para documentação detalhada.
 
-## 📝 Regras do Truco
+---
 
-- **Objetivo:** Primeiro time a fazer 12 pontos vence
-- **Quedas:** Melhor de 3 por mão
-- **Valores:** 1 ponto (normal), 3 (truco), 6, 9, 12
-- **Mão de 11:** Times com 11 pontos veem mão do parceiro
-- **Manilha:** Carta imediatamente superior ao vira
-
-## 🤝 Contribuindo
-
-1. Fork o projeto
-2. Crie uma branch (`git checkout -b feature/MinhaFeature`)
-3. Commit suas mudanças (`git commit -m 'feat: Minha feature'`)
-4. Push para a branch (`git push origin feature/MinhaFeature`)
-5. Abra um Pull Request
-
-## 📜 Licença
-
-MIT License - veja LICENSE para detalhes
-
-## 👨‍💻 Autor
-
-Desenvolvido com ❤️ usando Python e Rich
+**Python 3.7+ • Rich library • MIT License**
