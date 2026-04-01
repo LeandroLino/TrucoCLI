@@ -2,8 +2,7 @@ import socket
 import pickle
 import time
 import sys
-import tty
-import termios
+import platform
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -13,7 +12,7 @@ from rich.align import Align
 from rich.text import Text
 
 from config import *
-from utils import debug_log, get_parceiro, e_carta_vermelha, criar_barra_progresso, get_emoji_posicao, e_manilha, get_nome_manilha, formatar_carta_para_select
+from utils import debug_log, get_parceiro, e_carta_vermelha, criar_barra_progresso, get_emoji_posicao, e_manilha, get_nome_manilha, formatar_carta_para_select, get_key_multiplataforma
 from stats import GameStats
 
 console = Console()
@@ -421,6 +420,7 @@ class TrucoClient:
         })
         
         selecionado = 0
+        sistema = platform.system()
         
         console.print("\n")  # Espaço antes do menu
         
@@ -448,21 +448,46 @@ class TrucoClient:
                 sys.stdout.write('\033[F\033[K')
             sys.stdout.flush()
             
-            if tecla == '\x1b':  # ESC sequence
-                next_key = self.get_key()
-                if next_key == '[':
+            # Processa entrada multiplataforma
+            if sistema == "Windows":
+                # No Windows, pode receber sequência ANSI completa ou códigos especiais
+                if tecla == '\x1b':  # ESC - início de sequência
+                    next_key = self.get_key()
+                    if next_key == '[':
+                        arrow = self.get_key()
+                        if arrow == 'A':  # Seta para cima
+                            selecionado = (selecionado - 1) % len(opcoes)
+                        elif arrow == 'B':  # Seta para baixo
+                            selecionado = (selecionado + 1) % len(opcoes)
+                elif ord(tecla) == 224 or ord(tecla) == 0:  # Código especial Windows
                     arrow = self.get_key()
-                    if arrow == 'A':  # Seta para cima
+                    if ord(arrow) == 72:  # Seta para cima (código Windows)
                         selecionado = (selecionado - 1) % len(opcoes)
-                    elif arrow == 'B':  # Seta para baixo
+                    elif ord(arrow) == 80:  # Seta para baixo (código Windows)
                         selecionado = (selecionado + 1) % len(opcoes)
-            
-            elif tecla == '\r' or tecla == '\n':  # ENTER
-                # Limpa o menu uma última vez
-                for _ in range(len(menu_lines)):
-                    sys.stdout.write('\033[F\033[K')
-                sys.stdout.flush()
-                break
+                elif tecla == '\r' or tecla == '\n':  # ENTER
+                    # Limpa o menu uma última vez
+                    for _ in range(len(menu_lines)):
+                        sys.stdout.write('\033[F\033[K')
+                    sys.stdout.flush()
+                    break
+            else:
+                # Unix/Linux/macOS
+                if tecla == '\x1b':  # ESC sequence
+                    next_key = self.get_key()
+                    if next_key == '[':
+                        arrow = self.get_key()
+                        if arrow == 'A':  # Seta para cima
+                            selecionado = (selecionado - 1) % len(opcoes)
+                        elif arrow == 'B':  # Seta para baixo
+                            selecionado = (selecionado + 1) % len(opcoes)
+                
+                elif tecla == '\r' or tecla == '\n':  # ENTER
+                    # Limpa o menu uma última vez
+                    for _ in range(len(menu_lines)):
+                        sys.stdout.write('\033[F\033[K')
+                    sys.stdout.flush()
+                    break
         
         # Processa a opção escolhida
         opcao_escolhida = opcoes[selecionado]
@@ -505,15 +530,8 @@ class TrucoClient:
             return (carta, virada)
     
     def get_key(self):
-        """Captura uma tecla do teclado"""
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-        try:
-            tty.setraw(sys.stdin.fileno())
-            ch = sys.stdin.read(1)
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        return ch
+        """Captura uma tecla do teclado (multiplataforma)"""
+        return get_key_multiplataforma()
     
     def pedir_jogada(self, n_queda):
         """Pede ao jogador para fazer uma jogada"""
