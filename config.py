@@ -9,6 +9,9 @@ CLIENT_HOST = '127.0.0.1'
 BUFFER_SIZE = 4096
 MAX_PLAYERS = 4
 
+# ===== LOBBY =====
+LOBBY_UPDATE_INTERVAL = 0.5  # Intervalo de atualização do lobby
+
 # ===== GAME RULES =====
 ORDEM_CARTAS = ["4", "5", "6", "7", "Q", "J", "K", "A", "2", "3"]
 NAIPES = {"Ouros": 1, "Espadas": 2, "Copas": 3, "Paus": 4}
@@ -74,6 +77,11 @@ ICON_PONTOS = "🎯"
 # ===== PROTOCOL MESSAGE TYPES =====
 class MsgType:
     """Tipos de mensagens do protocolo"""
+    LOBBY_STATE = "LOBBY_STATE"
+    LOBBY_JOIN_TEAM = "LOBBY_JOIN_TEAM"
+    LOBBY_LEAVE_TEAM = "LOBBY_LEAVE_TEAM"
+    LOBBY_READY = "LOBBY_READY"
+    LOBBY_START = "LOBBY_START"
     NICKS = "NICKS"
     START = "START"
     ONZE = "ONZE"

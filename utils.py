@@ -2,6 +2,8 @@
 Funções utilitárias compartilhadas
 """
 from datetime import datetime
+import sys
+import platform
 from config import DEBUG_MODE
 
 def log(msg, nivel="INFO"):
@@ -12,6 +14,50 @@ def debug_log(msg):
     """Log apenas se DEBUG_MODE estiver ativo"""
     if DEBUG_MODE:
         log(msg, "DEBUG")
+
+def get_key_multiplataforma():
+    """
+    Captura uma tecla do teclado de forma multiplataforma
+    Funciona em Windows, Linux e macOS
+    """
+    sistema = platform.system()
+    
+    if sistema == "Windows":
+        # Windows: usa msvcrt
+        import msvcrt
+        
+        # Espera por uma tecla
+        while not msvcrt.kbhit():
+            pass
+        
+        ch = msvcrt.getch()
+        
+        # Detecta teclas especiais (setas, etc)
+        if ch in (b'\x00', b'\xe0'):  # Prefixo de tecla especial
+            ch2 = msvcrt.getch()
+            # Retorna o código da tecla especial como caractere
+            return chr(224) if ch == b'\xe0' else chr(0)
+        
+        # Decodifica byte normal
+        try:
+            decoded = ch.decode('utf-8', errors='ignore')
+            return decoded if decoded else chr(ch[0])
+        except:
+            return chr(ch[0]) if len(ch) > 0 else ''
+    
+    else:
+        # Unix/Linux/macOS: usa tty e termios
+        import tty
+        import termios
+        
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ch
 
 def get_time_jogador(jogador_id):
     """Retorna o time (A ou B) baseado no ID do jogador"""

@@ -2,8 +2,7 @@ import socket
 import pickle
 import time
 import sys
-import tty
-import termios
+import platform
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -13,7 +12,7 @@ from rich.align import Align
 from rich.text import Text
 
 from config import *
-from utils import debug_log, get_parceiro, e_carta_vermelha, criar_barra_progresso, get_emoji_posicao, e_manilha, get_nome_manilha, formatar_carta_para_select
+from utils import debug_log, get_parceiro, e_carta_vermelha, criar_barra_progresso, get_emoji_posicao, e_manilha, get_nome_manilha, formatar_carta_para_select, get_key_multiplataforma
 from stats import GameStats
 
 console = Console()
@@ -64,6 +63,176 @@ class TrucoClient:
         except (KeyboardInterrupt, EOFError):
             console.print("\n[red]Conexão cancelada pelo usuário[/]")
             return False
+    
+    def mostrar_lobby(self, estado):
+        """Mostra interface do lobby"""
+        console.clear()
+        
+        sala_id = estado.get("sala_id", "????")
+        jogadores = estado.get("jogadores", [])
+        team_a_count = estado.get("team_a_count", 0)
+        team_b_count = estado.get("team_b_count", 0)
+        total = estado.get("total", 0)
+        
+        # Header
+        header = f"""
+╔══════════════════════════════════════════════════════════╗
+║                  🎴 LOBBY - TRUCO CLI                    ║
+╠══════════════════════════════════════════════════════════╣
+║                                                          ║
+║  SALA: #{sala_id}                   Jogadores: {total}/4            ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝
+"""
+        console.print(header, style="bold cyan")
+        
+        # Times
+        console.print("\n")
+        
+        # Time A
+        time_a_status = "CHEIO" if team_a_count >= 2 else f"{team_a_count}/2"
+        time_a_panel = []
+        time_a_panel.append(f"[bold cyan]TIME A (🔵) [{time_a_status}][/]")
+        time_a_panel.append("")
+        
+        jogadores_a = [j for j in jogadores if j["time"] == "A"]
+        for i, jogador in enumerate(jogadores_a):
+            pronto = "✓" if jogador["pronto"] else " "
+            time_a_panel.append(f"[{pronto}] {jogador['nick']}")
+        
+        for _ in range(2 - len(jogadores_a)):
+            time_a_panel.append("[ ] Aguardando...")
+        
+        # Time B
+        time_b_status = "CHEIO" if team_b_count >= 2 else f"{team_b_count}/2"
+        time_b_panel = []
+        time_b_panel.append(f"[bold magenta]TIME B (🔴) [{time_b_status}][/]")
+        time_b_panel.append("")
+        
+        jogadores_b = [j for j in jogadores if j["time"] == "B"]
+        for i, jogador in enumerate(jogadores_b):
+            pronto = "✓" if jogador["pronto"] else " "
+            time_b_panel.append(f"[{pronto}] {jogador['nick']}")
+        
+        for _ in range(2 - len(jogadores_b)):
+            time_b_panel.append("[ ] Aguardando...")
+        
+        # Exibe times lado a lado
+        table = Table.grid(padding=2)
+        table.add_column()
+        table.add_column()
+        
+        table.add_row(
+            Panel("\n".join(time_a_panel), border_style="cyan"),
+            Panel("\n".join(time_b_panel), border_style="magenta")
+        )
+        
+        console.print(table)
+        
+        # Jogadores sem time
+        sem_time = [j for j in jogadores if j["time"] is None]
+        if sem_time:
+            console.print("\n[yellow]Aguardando escolha de time:[/]")
+            for j in sem_time:
+                console.print(f"  • {j['nick']}")
+        
+        # Instruções
+        console.print("\n" + "─" * 60)
+        console.print("[bold yellow]Comandos:[/]")
+        console.print("  [A] - Entrar no Time A")
+        console.print("  [B] - Entrar no Time B")
+        console.print("  [S] - Sair do time atual")
+        console.print("  [R] - Marcar como Pronto")
+        
+        # Aviso se times estão cheios
+        if team_a_count >= 2 and team_b_count >= 2:
+            console.print("\n[dim]ℹ️  Ambos os times estão cheios (2x2).[/]")
+            console.print("[dim]   Use [S] para sair e liberar vaga.[/]")
+        
+        console.print("─" * 60)
+    
+    def processar_lobby(self):
+        """Processa fase de lobby"""
+        console.clear()
+        console.print("[bold cyan]Conectando ao lobby...[/]")
+        
+        # Recebe mensagem de entrada no lobby
+        data = self.receber_mensagem()
+        if data is None or data.get("tipo") != "LOBBY_JOINED":
+            console.print("[red]Erro ao entrar no lobby[/]")
+            return False
+        
+        sala_id = data.get("sala_id")
+        console.print(f"[green]{data.get('msg', '')}[/]")
+        console.print(f"[bold cyan]Sala: #{sala_id}[/]")
+        time.sleep(0.5)
+        
+        ultimo_estado = None
+        
+        # Loop do lobby
+        while True:
+            # Verifica se há mensagens do servidor com timeout curto
+            self.client.settimeout(0.5)
+            try:
+                raw_data = self.client.recv(BUFFER_SIZE)
+                if not raw_data:
+                    console.print("[red]Servidor desconectado[/]")
+                    return False
+                
+                data = pickle.loads(raw_data)
+                tipo = data.get("tipo")
+                
+                if tipo == MsgType.LOBBY_STATE:
+                    estado = data.get("estado", {})
+                    if estado != ultimo_estado:
+                        self.mostrar_lobby(estado)
+                        ultimo_estado = estado
+                
+                elif tipo == MsgType.LOBBY_START:
+                    console.clear()
+                    console.print("[bold green]🎮 Iniciando partida...[/]")
+                    time.sleep(1)
+                    self.client.settimeout(None)
+                    return True
+                
+                elif tipo == "ERROR":
+                    console.print(f"[red]{data.get('msg', 'Erro')}[/]")
+                    time.sleep(0.5)
+            
+            except socket.timeout:
+                # Timeout normal - permite input do usuário
+                try:
+                    import select
+                    if select.select([sys.stdin], [], [], 0)[0]:
+                        escolha = input().upper().strip()
+                        
+                        if escolha == "A":
+                            self.client.sendall(pickle.dumps({
+                                "tipo": MsgType.LOBBY_JOIN_TEAM,
+                                "time": "A"
+                            }))
+                        elif escolha == "B":
+                            self.client.sendall(pickle.dumps({
+                                "tipo": MsgType.LOBBY_JOIN_TEAM,
+                                "time": "B"
+                            }))
+                        elif escolha == "S":
+                            self.client.sendall(pickle.dumps({
+                                "tipo": MsgType.LOBBY_LEAVE_TEAM
+                            }))
+                        elif escolha == "R":
+                            self.client.sendall(pickle.dumps({
+                                "tipo": MsgType.LOBBY_READY
+                            }))
+                
+                except Exception:
+                    pass
+            
+            except Exception as e:
+                console.print(f"[red]Erro no lobby: {e}[/]")
+                return False
+        
+        return False
     
     def receber_mensagem(self):
         """Recebe mensagem do servidor"""
@@ -251,6 +420,7 @@ class TrucoClient:
         })
         
         selecionado = 0
+        sistema = platform.system()
         
         console.print("\n")  # Espaço antes do menu
         
@@ -278,21 +448,46 @@ class TrucoClient:
                 sys.stdout.write('\033[F\033[K')
             sys.stdout.flush()
             
-            if tecla == '\x1b':  # ESC sequence
-                next_key = self.get_key()
-                if next_key == '[':
+            # Processa entrada multiplataforma
+            if sistema == "Windows":
+                # No Windows, pode receber sequência ANSI completa ou códigos especiais
+                if tecla == '\x1b':  # ESC - início de sequência
+                    next_key = self.get_key()
+                    if next_key == '[':
+                        arrow = self.get_key()
+                        if arrow == 'A':  # Seta para cima
+                            selecionado = (selecionado - 1) % len(opcoes)
+                        elif arrow == 'B':  # Seta para baixo
+                            selecionado = (selecionado + 1) % len(opcoes)
+                elif ord(tecla) == 224 or ord(tecla) == 0:  # Código especial Windows
                     arrow = self.get_key()
-                    if arrow == 'A':  # Seta para cima
+                    if ord(arrow) == 72:  # Seta para cima (código Windows)
                         selecionado = (selecionado - 1) % len(opcoes)
-                    elif arrow == 'B':  # Seta para baixo
+                    elif ord(arrow) == 80:  # Seta para baixo (código Windows)
                         selecionado = (selecionado + 1) % len(opcoes)
-            
-            elif tecla == '\r' or tecla == '\n':  # ENTER
-                # Limpa o menu uma última vez
-                for _ in range(len(menu_lines)):
-                    sys.stdout.write('\033[F\033[K')
-                sys.stdout.flush()
-                break
+                elif tecla == '\r' or tecla == '\n':  # ENTER
+                    # Limpa o menu uma última vez
+                    for _ in range(len(menu_lines)):
+                        sys.stdout.write('\033[F\033[K')
+                    sys.stdout.flush()
+                    break
+            else:
+                # Unix/Linux/macOS
+                if tecla == '\x1b':  # ESC sequence
+                    next_key = self.get_key()
+                    if next_key == '[':
+                        arrow = self.get_key()
+                        if arrow == 'A':  # Seta para cima
+                            selecionado = (selecionado - 1) % len(opcoes)
+                        elif arrow == 'B':  # Seta para baixo
+                            selecionado = (selecionado + 1) % len(opcoes)
+                
+                elif tecla == '\r' or tecla == '\n':  # ENTER
+                    # Limpa o menu uma última vez
+                    for _ in range(len(menu_lines)):
+                        sys.stdout.write('\033[F\033[K')
+                    sys.stdout.flush()
+                    break
         
         # Processa a opção escolhida
         opcao_escolhida = opcoes[selecionado]
@@ -335,15 +530,8 @@ class TrucoClient:
             return (carta, virada)
     
     def get_key(self):
-        """Captura uma tecla do teclado"""
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-        try:
-            tty.setraw(sys.stdin.fileno())
-            ch = sys.stdin.read(1)
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        return ch
+        """Captura uma tecla do teclado (multiplataforma)"""
+        return get_key_multiplataforma()
     
     def pedir_jogada(self, n_queda):
         """Pede ao jogador para fazer uma jogada"""
@@ -644,6 +832,11 @@ class TrucoClient:
             return
         
         if not self.enviar_nick():
+            self.client.close()
+            return
+        
+        # Fase de lobby
+        if not self.processar_lobby():
             self.client.close()
             return
         
